@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel Earth — Disaster Monitoring</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --sand: #8a6a3a; --dust: #4a3820; --moss: #3a5020; --leaf: #5a7a30;
+    --ember: #c45a1a; --flame: #d06820;
+    --bg: #f5f0e8; --surface: #faf7f2; --surface2: #ede8de;
+    --border: rgba(100,80,40,0.15); --border-strong: rgba(100,80,40,0.35);
+    --text: #3a2e1e; --text-muted: #7a6a4a; --text-dim: #a09070;
+    --radius: 4px; --radius-lg: 8px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-weight: 300; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(100,80,40,0.04) 40px), repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(100,80,40,0.04) 40px);
+  }
+  .page { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+
+  header { display:flex; align-items:center; justify-content:space-between; padding:22px 0 18px; border-bottom:1px solid var(--border); }
+  .logo { display:flex; align-items:center; gap:12px; }
+  .logo-globe { width:34px; height:34px; border-radius:50%; background:conic-gradient(from 200deg,#4a5e2f,#7a9b4a,#c9a96e,#5c3d1e,#4a5e2f); display:flex; align-items:center; justify-content:center; font-size:15px; position:relative; overflow:hidden; }
+  .logo-globe::after { content:''; position:absolute; inset:0; background:radial-gradient(circle at 35% 35%,rgba(255,255,255,0.3),transparent 60%); border-radius:50%; }
+  .logo-text h1 { font-family:'Playfair Display',serif; font-size:42px; font-weight:700; letter-spacing:0.02em; color:var(--dust); }
+  .logo-text span { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.15em; color:var(--text-muted); font-family:'DM Mono',monospace; }
+  .header-right { display:flex; align-items:center; gap:20px; }
+  .live-pill { display:flex; align-items:center; gap:7px; background:rgba(196,90,26,0.08); border:1px solid rgba(196,90,26,0.35); border-radius:20px; padding:4px 12px; font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.1em; color:var(--flame); text-transform:uppercase; }
+  .live-dot { width:6px; height:6px; border-radius:50%; background:var(--flame); animation:blink 1.6s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .utc { font-family:'DM Mono',monospace; font-size:12px; color:var(--text-muted); letter-spacing:0.05em; }
+
+  .ticker-bar { display:flex; align-items:center; background:rgba(196,90,26,0.07); border:1px solid rgba(196,90,26,0.28); border-radius:var(--radius); margin:14px 0; overflow:hidden; }
+  .ticker-label { background:rgba(196,90,26,0.78); padding:8px 14px; flex-shrink:0; font-family:'DM Mono',monospace; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.12em; color:#fff; white-space:nowrap; line-height:1.4; }
+  .ticker-track { flex:1; overflow:hidden; padding:0 16px; }
+  .ticker-inner { display:inline-block; white-space:nowrap; font-family:'DM Mono',monospace; font-size:11px; color:var(--dust); animation:ticker 50s linear infinite; }
+  @keyframes ticker { from{transform:translateX(100%)} to{transform:translateX(-100%)} }
+
+  .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px 16px; position:relative; overflow:hidden; }
+  .stat-card::before { content:''; position:absolute; top:0; left:0; width:3px; height:100%; background:var(--accent,var(--sand)); opacity:0.8; }
+  .stat-label { font-size:9px; font-weight:500; text-transform:uppercase; letter-spacing:0.13em; color:var(--text-muted); font-family:'DM Mono',monospace; margin-bottom:7px; }
+  .stat-value { font-family:'Playfair Display',serif; font-size:32px; font-weight:700; color:var(--dust); line-height:1; margin-bottom:4px; }
+  .stat-sub { font-size:10px; color:var(--text-muted); }
+  .stat-card.c-red   { --accent:#c44; } .stat-card.c-amber { --accent:var(--flame); }
+  .stat-card.c-blue  { --accent:#3a8aaf; } .stat-card.c-green { --accent:var(--leaf); }
+
+  .main-grid { display:grid; grid-template-columns:1fr 340px; gap:14px; margin-bottom:16px; }
+
+  .map-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; display:flex; flex-direction:column; }
+  .panel-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .panel-title { font-family:'Playfair Display',serif; font-size:14px; color:var(--dust); }
+  .layer-btns { display:flex; gap:5px; }
+  .layer-btn { font-family:'DM Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.08em; padding:3px 9px; background:transparent; border:1px solid var(--border); border-radius:2px; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+  .layer-btn.active, .layer-btn:hover { background:rgba(100,80,40,0.08); border-color:var(--border-strong); color:var(--sand); }
+
+  #map { flex:1; min-height:470px; }
+  .leaflet-container { background:#d8d0c0; }
+  .leaflet-control-attribution { background:rgba(245,240,232,0.92) !important; color:#8a7a5a !important; font-size:9px !important; font-family:'DM Mono',monospace !important; }
+  .leaflet-control-attribution a { color:#6a8a40 !important; }
+  .leaflet-control-zoom a { background:rgba(250,247,242,0.96) !important; color:var(--sand) !important; border-color:var(--border) !important; }
+  .leaflet-control-zoom a:hover { background:var(--surface2) !important; }
+  .leaflet-popup-content-wrapper { background:rgba(250,247,242,0.98) !important; border:1px solid var(--border-strong) !important; border-radius:4px !important; color:var(--dust) !important; font-family:'DM Sans',sans-serif !important; font-size:12px !important; box-shadow:0 4px 20px rgba(0,0,0,0.12) !important; }
+  .leaflet-popup-tip { background:rgba(250,247,242,0.98) !important; }
+  .leaflet-popup-content { margin:10px 14px !important; }
+  .popup-title { font-weight:500; color:var(--dust); margin-bottom:4px; font-size:13px; }
+  .popup-meta  { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted); line-height:1.7; }
+  .popup-badge { display:inline-block; margin-top:6px; font-family:'DM Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.1em; padding:2px 8px; border-radius:2px; }
+  .pb-critical { background:rgba(180,40,40,0.12); color:#b02020; border:1px solid rgba(180,40,40,0.3); }
+  .pb-high     { background:rgba(196,90,26,0.12); color:#c45a1a; border:1px solid rgba(196,90,26,0.3); }
+  .pb-moderate { background:rgba(140,110,40,0.12); color:#8a6a20; border:1px solid rgba(140,110,40,0.25); }
+  .pb-low      { background:rgba(74,94,47,0.12); color:#4a6a20; border:1px solid rgba(74,94,47,0.3); }
+
+  .map-legend { padding:8px 14px; border-top:1px solid var(--border); display:flex; gap:16px; flex-wrap:wrap; flex-shrink:0; }
+  .legend-item { display:flex; align-items:center; gap:5px; font-family:'DM Mono',monospace; font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; }
+  .legend-dot  { width:7px; height:7px; border-radius:50%; }
+
+  .sidebar { display:flex; flex-direction:column; gap:12px; }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; }
+  .feed-list { max-height:540px; overflow-y:auto; }
+  .feed-list::-webkit-scrollbar { width:3px; }
+  .feed-list::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:2px; }
+  .feed-item { display:flex; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.15s; animation:slideIn 0.3s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateX(10px)} to{opacity:1;transform:translateX(0)} }
+  .feed-item:hover { background:rgba(100,80,40,0.05); }
+  .feed-item:last-child { border-bottom:none; }
+  .feed-dot { width:7px; height:7px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+  .fd-red    { background:#c43030; box-shadow:0 0 5px rgba(196,48,48,0.4); }
+  .fd-orange { background:#d06820; box-shadow:0 0 5px rgba(208,104,32,0.4); }
+  .fd-blue   { background:#3a8aaf; box-shadow:0 0 5px rgba(58,138,175,0.3); }
+  .fd-yellow { background:#b08820; box-shadow:0 0 5px rgba(176,136,32,0.3); }
+  .fd-green  { background:var(--leaf); }
+  .feed-body { flex:1; min-width:0; }
+  .feed-title { font-size:12px; color:var(--dust); margin-bottom:2px; line-height:1.4; }
+  .feed-meta  { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-muted); }
+  .feed-badge { font-family:'DM Mono',monospace; font-size:8px; text-transform:uppercase; letter-spacing:0.1em; padding:2px 5px; border-radius:2px; align-self:flex-start; white-space:nowrap; flex-shrink:0; }
+  .fb-critical { background:rgba(180,40,40,0.12); color:#b02020; border:1px solid rgba(180,40,40,0.3); }
+  .fb-high     { background:rgba(196,90,26,0.12); color:#c45a1a; border:1px solid rgba(196,90,26,0.3); }
+  .fb-moderate { background:rgba(140,110,40,0.12); color:#8a6a20; border:1px solid rgba(140,110,40,0.25); }
+  .fb-low      { background:rgba(74,94,47,0.12); color:#4a6a20; border:1px solid rgba(74,94,47,0.3); }
+
+  .bottom-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:36px; }
+  .chart-wrap { padding:0 16px 14px; }
+  .chart-labels { display:flex; justify-content:space-between; font-family:'DM Mono',monospace; font-size:8px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:5px; }
+  .sensor-table { width:100%; border-collapse:collapse; }
+  .sensor-table th { font-family:'DM Mono',monospace; font-size:8px; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-dim); font-weight:500; padding:9px 16px 7px; text-align:left; border-bottom:1px solid var(--border); }
+  .sensor-table td { padding:8px 16px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:11px; }
+  .sensor-table td:first-child { color:var(--dust); }
+  .sensor-table tr:last-child td { border-bottom:none; }
+  .sensor-table tr:hover td { background:rgba(100,80,40,0.04); }
+  .s-ok   { color:#4a7a20; font-family:'DM Mono',monospace; font-size:9px; }
+  .s-warn { color:var(--flame); font-family:'DM Mono',monospace; font-size:9px; }
+
+  footer { border-top:1px solid var(--border); padding:16px 0; display:flex; justify-content:space-between; align-items:center; font-family:'DM Mono',monospace; font-size:9px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0; }
+  .footer-right { display:flex; gap:16px; }
+  .fsrc span { color:var(--leaf); }
+
+  @media(max-width:960px){
+    .main-grid{grid-template-columns:1fr}
+    .stats-row{grid-template-columns:repeat(2,1fr)}
+    .bottom-row{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="logo">
+      <div class="logo-globe">🌍</div>
+      <div class="logo-text">
+        <h1><b>Eyes on Earth</b></h1>
+        <span>Satellite-Powered Disaster Monitoring</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-pill"><div class="live-dot"></div>Live Data</div>
+      <div class="utc" id="utcClock">— UTC</div>
+    </div>
+  </header>
+
+  <div class="ticker-bar">
+    <div class="ticker-label">[LIVE<br>DATA]</div>
+    <div class="ticker-track">
+      <span class="ticker-inner">
+        Streaming real-time telemetry from USGS Seismic and NASA FIRMS thermal sensors...&nbsp;&nbsp;&nbsp;
+        ● M2.1 earthquake — 51 km W of Salamatof, Alaska &nbsp;&nbsp;&nbsp;
+        ● Active fire detected — Los Padres National Forest, CA &nbsp;&nbsp;&nbsp;
+        ● Flash floods — Chittagong Division, Bangladesh &nbsp;&nbsp;&nbsp;
+        ● Cyclone Biparjoy Cat.4 — Gujarat coast — 2.1M at risk &nbsp;&nbsp;&nbsp;
+        ● VIIRS thermal anomaly — Mato Grosso, Brazil &nbsp;&nbsp;&nbsp;
+        ● M5.4 seismic event — Atacama Region, Chile &nbsp;&nbsp;&nbsp;
+        ● SAR change detection — Rhine River basin, Germany &nbsp;&nbsp;&nbsp;
+        ● Sentinel-2 scene acquired — Bay of Bengal &nbsp;&nbsp;&nbsp;
+        ● MODIS fire radiative power update — Siberia
+      </span>
+    </div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card c-red">
+      <div class="stat-label">Active Disasters</div>
+      <div class="stat-value">23</div>
+      <div class="stat-sub">↑ 3 from yesterday</div>
+    </div>
+    <div class="stat-card c-amber">
+      <div class="stat-label">High-Risk Alerts</div>
+      <div class="stat-value">8</div>
+      <div class="stat-sub">Requiring immediate response</div>
+    </div>
+    <div class="stat-card c-blue">
+      <div class="stat-label">Satellites Active</div>
+      <div class="stat-value">12</div>
+      <div class="stat-sub">Sentinel-2, Landsat, MODIS</div>
+    </div>
+    <div class="stat-card c-green">
+      <div class="stat-label">Scenes Processed</div>
+      <div class="stat-value">847</div>
+      <div class="stat-sub">Last 24 hours</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="map-panel">
+      <div class="panel-header">
+        <div class="panel-title">Global Disaster Map — Satellite Imagery</div>
+        <div class="layer-btns">
+          <button class="layer-btn active" onclick="toggleLayer('fire',this)">Fire</button>
+          <button class="layer-btn active" onclick="toggleLayer('flood',this)">Flood</button>
+          <button class="layer-btn active" onclick="toggleLayer('cyclone',this)">Cyclone</button>
+          <button class="layer-btn active" onclick="toggleLayer('quake',this)">Quake</button>
+        </div>
+      </div>
+      <div id="map"></div>
+      <div class="map-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#d06820"></div>Wildfire (3)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3a8aaf"></div>Flood (3)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7b49c0"></div>Cyclone (2)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#b08820"></div>Earthquake (3)</div>
+        <div class="legend-item" style="margin-left:auto;color:var(--text-dim)">CARTO Light · OpenTopoMap · Leaflet</div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Real-Time Feed</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em">Auto</div>
+        </div>
+        <div class="feed-list" id="feedList">
+          <div class="feed-item">
+            <div class="feed-dot fd-red"></div>
+            <div class="feed-body"><div class="feed-title">Cyclone Biparjoy — Cat.4 landfall</div><div class="feed-meta">Gujarat, India · 14 min ago</div></div>
+            <div class="feed-badge fb-critical">Critical</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-orange"></div>
+            <div class="feed-body"><div class="feed-title">Wildfire — Los Padres NF</div><div class="feed-meta">California, USA · 1h 22m ago</div></div>
+            <div class="feed-badge fb-high">High</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-blue"></div>
+            <div class="feed-body"><div class="feed-title">Flash Floods — Chittagong</div><div class="feed-meta">Bangladesh · 2h 05m ago</div></div>
+            <div class="feed-badge fb-high">High</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-yellow"></div>
+            <div class="feed-body"><div class="feed-title">M 6.1 Earthquake — Hokkaido</div><div class="feed-meta">Japan · 3h 40m ago</div></div>
+            <div class="feed-badge fb-moderate">Moderate</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-blue"></div>
+            <div class="feed-body"><div class="feed-title">River Flooding — Rhine Basin</div><div class="feed-meta">Germany · 5h 18m ago</div></div>
+            <div class="feed-badge fb-moderate">Moderate</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-orange"></div>
+            <div class="feed-body"><div class="feed-title">Wildfire — Mato Grosso</div><div class="feed-meta">Brazil · 7h 02m ago</div></div>
+            <div class="feed-badge fb-moderate">Moderate</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-yellow"></div>
+            <div class="feed-body"><div class="feed-title">M 2.1 — Salamatof, Alaska</div><div class="feed-meta">USA · 8h 30m ago</div></div>
+            <div class="feed-badge fb-low">Low</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-yellow"></div>
+            <div class="feed-body"><div class="feed-title">M 5.4 — Atacama Region</div><div class="feed-meta">Chile · 9h ago</div></div>
+            <div class="feed-badge fb-low">Low</div>
+          </div>
+          <div class="feed-item">
+            <div class="feed-dot fd-green"></div>
+            <div class="feed-body"><div class="feed-title">Drought Monitor Update</div><div class="feed-meta">Horn of Africa · 12h ago</div></div>
+            <div class="feed-badge fb-low">Watch</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-row">
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">7-Day Event Trend</div></div>
+      <div class="chart-wrap">
+        <div class="chart-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Today</span></div>
+        <svg width="100%" viewBox="0 0 280 75" xmlns="http://www.w3.org/2000/svg">
+          <rect x="5"  y="48" width="8" height="22" rx="1" fill="#d06820" opacity="0.8"/>
+          <rect x="14" y="53" width="8" height="17" rx="1" fill="#3a8aaf" opacity="0.7"/>
+          <rect x="23" y="59" width="8" height="11" rx="1" fill="#b08820" opacity="0.7"/>
+          <rect x="45" y="42" width="8" height="28" rx="1" fill="#d06820" opacity="0.8"/>
+          <rect x="54" y="48" width="8" height="22" rx="1" fill="#3a8aaf" opacity="0.7"/>
+          <rect x="63" y="56" width="8" height="14" rx="1" fill="#b08820" opacity="0.7"/>
+          <rect x="85" y="38" width="8" height="32" rx="1" fill="#d06820" opacity="0.8"/>
+          <rect x="94" y="46" width="8" height="24" rx="1" fill="#3a8aaf" opacity="0.7"/>
+          <rect x="103" y="54" width="8" height="16" rx="1" fill="#b08820" opacity="0.7"/>
+          <rect x="125" y="34" width="8" height="36" rx="1" fill="#d06820" opacity="0.8"/>
+          <rect x="134" y="42" width="8" height="28" rx="1" fill="#3a8aaf" opacity="0.7"/>
+          <rect x="143" y="50" width="8" height="20" rx="1" fill="#b08820" opacity="0.7"/>
+          <rect x="152" y="60" width="8" height="10" rx="1" fill="#7b49c0" opacity="0.7"/>
+          <rect x="165" y="36" width="8" height="34" rx="1" fill="#d06820" opacity="0.8"/>
+          <rect x="174" y="44" width="8" height="26" rx="1" fill="#3a8aaf" opacity="0.7"/>
+          <rect x="183" y="52" width="8" height="18" rx="1" fill="#b08820" opacity="0.7"/>
+          <rect x="192" y="56" width="8" height="14" rx="1" fill="#7b49c0" opacity="0.7"/>
+          <rect x="205" y="30" width="8" height="40" rx="1" fill="#d06820" opacity="0.8"/>
+          <rect x="214" y="40" width="8" height="30" rx="1" fill="#3a8aaf" opacity="0.7"/>
+          <rect x="223" y="48" width="8" height="22" rx="1" fill="#b08820" opacity="0.7"/>
+          <rect x="232" y="52" width="8" height="18" rx="1" fill="#7b49c0" opacity="0.7"/>
+          <rect x="245" y="24" width="8" height="46" rx="1" fill="#d06820"/>
+          <rect x="254" y="32" width="8" height="38" rx="1" fill="#3a8aaf"/>
+          <rect x="263" y="44" width="8" height="26" rx="1" fill="#b08820"/>
+          <rect x="272" y="48" width="8" height="22" rx="1" fill="#7b49c0"/>
+          <line x1="0" y1="70" x2="280" y2="70" stroke="#d0c8b0" stroke-width="0.5"/>
+        </svg>
+      </div>
+      <div style="display:flex;gap:12px;padding:6px 16px 12px;flex-wrap:wrap">
+        <div class="legend-item"><div class="legend-dot" style="background:#d06820"></div>Fire</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3a8aaf"></div>Flood</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#b08820"></div>Quake</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7b49c0"></div>Cyclone</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">Satellite Sensor Status</div></div>
+      <table class="sensor-table">
+        <thead><tr><th>Platform</th><th>Sensor</th><th>Res.</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Sentinel-2A</td><td>MSI</td><td>10m</td><td class="s-ok">● Online</td></tr>
+          <tr><td>Sentinel-1A</td><td>SAR-C</td><td>5m</td><td class="s-ok">● Online</td></tr>
+          <tr><td>Landsat-9</td><td>OLI-2</td><td>30m</td><td class="s-ok">● Online</td></tr>
+          <tr><td>MODIS Terra</td><td>MODIS</td><td>250m</td><td class="s-warn">◐ Degraded</td></tr>
+          <tr><td>VIIRS NOAA-20</td><td>VIIRS</td><td>375m</td><td class="s-ok">● Online</td></tr>
+          <tr><td>GPM Core</td><td>DPR/GMI</td><td>5km</td><td class="s-ok">● Online</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">24h Coverage Stats</div></div>
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:11px">
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;color:var(--text-muted)">Land Area Covered</span><span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--sand)">84%</span></div>
+          <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:84%;height:100%;background:var(--leaf);border-radius:2px"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;color:var(--text-muted)">Active Fire Detections</span><span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--flame)">1,248</span></div>
+          <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:62%;height:100%;background:var(--ember);border-radius:2px"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;color:var(--text-muted)">Flood Extent Mapped</span><span style="font-family:'DM Mono',monospace;font-size:11px;color:#3a8aaf">38,400 km²</span></div>
+          <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:55%;height:100%;background:#3a8aaf;border-radius:2px"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;color:var(--text-muted)">Damage Assessments</span><span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--sand)">17 reports</span></div>
+          <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:40%;height:100%;background:var(--sand);border-radius:2px"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;color:var(--text-muted)">SAR Change Detection</span><span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--sand)">92%</span></div>
+          <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:92%;height:100%;background:var(--moss);border-radius:2px"></div></div>
+        </div>
+        <div style="margin-top:4px;padding-top:10px;border-top:1px solid var(--border)">
+          <div style="font-family:'DM Mono',monospace;font-size:8px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:6px">Data Sources</div>
+          <div style="font-size:10px;color:var(--text-dim);line-height:1.9">ESA Copernicus · NASA FIRMS · USGS EarthExplorer · JAXA G-Portal · ISRO Bhuvan</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div>SentinelEarth · Remote Sensing Disaster Monitor · Data for public awareness</div>
+    <div class="footer-right">
+      <div class="fsrc">ESA <span>●</span></div>
+      <div class="fsrc">NASA <span>●</span></div>
+      <div class="fsrc">USGS <span>●</span></div>
+      <div class="fsrc">ISRO <span>●</span></div>
+      <div class="fsrc">JAXA <span>●</span></div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+// UTC clock
+function updateClock(){const n=new Date(),p=v=>String(v).padStart(2,'0');document.getElementById('utcClock').textContent=`${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())} UTC`;}
+setInterval(updateClock,1000);updateClock();
+
+// Leaflet map
+const map = L.map('map',{center:[20,10],zoom:2,minZoom:2,maxZoom:12,zoomControl:true});
+
+// CARTO Light — clean beige/white basemap
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains:'abcd', maxZoom:19
+}).addTo(map);
+
+// OpenTopoMap overlay for contour lines
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
+  attribution:'&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+  subdomains:'abc', maxZoom:17, opacity:0.18
+}).addTo(map);
+
+map.getContainer().style.filter='brightness(0.97) saturate(0.75)';
+
+// Pulse keyframes
+const s=document.createElement('style');
+s.textContent='@keyframes mpulse{0%{transform:scale(1);opacity:0.5}100%{transform:scale(3);opacity:0}}';
+document.head.appendChild(s);
+
+function dotIcon(color,pulse){
+  if(pulse){
+    return L.divIcon({className:'',html:`<div style="position:relative;width:28px;height:28px">
+      <div style="position:absolute;inset:0;border-radius:50%;background:${color};opacity:0.35;animation:mpulse 2s ease-out infinite"></div>
+      <div style="position:absolute;inset:5px;border-radius:50%;background:${color};box-shadow:0 0 10px ${color};border:2px solid rgba(255,255,255,0.7)"></div>
+    </div>`,iconSize:[28,28],iconAnchor:[14,14]});
+  }
+  return L.divIcon({className:'',html:`<div style="width:15px;height:15px;border-radius:50%;background:${color};box-shadow:0 0 0 3px ${color}44,0 0 10px ${color}88;border:2px solid rgba(255,255,255,0.6)"></div>`,iconSize:[15,15],iconAnchor:[7.5,7.5]});
+}
+
+function popHtml(d){
+  const bc={critical:'pb-critical',high:'pb-high',moderate:'pb-moderate',low:'pb-low'}[d.s]||'pb-low';
+  return `<div class="popup-title">${d.title}</div><div class="popup-meta">${d.info.replace(/\n/g,'<br>')}</div><span class="popup-badge ${bc}">${d.s}</span>`;
+}
+
+const data={
+  fire:[
+    {ll:[36.5,-118.8],title:'Wildfire — Los Padres NF',info:'California, USA\nArea: ~12,400 ha\nContainment: 18%',s:'high'},
+    {ll:[-10.5,-55.0],title:'Wildfire — Mato Grosso',info:'Brazil\nArea: ~6,800 ha\nNASA FIRMS detection',s:'moderate'},
+    {ll:[62.0,107.0], title:'Wildfire — Siberia',info:'Russia\nArea: ~42,000 ha\nSentinel-2 thermal',s:'moderate'},
+  ],
+  flood:[
+    {ll:[22.5,91.8], title:'Flash Floods — Chittagong',info:'Bangladesh\nAffected: ~180,000\nSAR inundation active',s:'high'},
+    {ll:[30.5,69.5], title:'Flooding — Indus Basin',info:'Pakistan\nFlooded: 8,200 km²\nSentinel-1 SAR',s:'high'},
+    {ll:[51.2,6.8],  title:'River Flooding — Rhine',info:'Germany\nDischarge: +240%\nCopernicus EMS active',s:'moderate'},
+  ],
+  cyclone:[
+    {ll:[22.0,68.5], title:'Cyclone Biparjoy — Cat.4',info:'Gujarat, India\nWind: 175 km/h\nPop. at risk: 2.1M',s:'critical',pulse:true},
+    {ll:[18.5,145.0],title:'Tropical Storm — W. Pacific',info:'W. Pacific\nWind: 95 km/h\nHWRF model tracked',s:'moderate'},
+  ],
+  quake:[
+    {ll:[43.5,141.8], title:'M 6.1 — Hokkaido',info:'Japan\nDepth: 35 km\nUSGS ShakeMap active',s:'moderate'},
+    {ll:[61.0,-151.5],title:'M 2.1 — Salamatof, AK',info:'Alaska, USA\nDepth: 8 km\nUSGS NEIC',s:'low'},
+    {ll:[-25.0,-70.5],title:'M 5.4 — Atacama',info:'Chile\nDepth: 42 km\nCSN monitoring',s:'low'},
+  ]
+};
+const colors={fire:'#d06820',flood:'#3a8aaf',cyclone:'#7b49c0',quake:'#b08820'};
+const layers={};
+
+Object.entries(data).forEach(([type,items])=>{
+  const g=L.layerGroup();
+  items.forEach(d=>{
+    L.marker(d.ll,{icon:dotIcon(colors[type],d.pulse)})
+      .bindPopup(popHtml(d),{maxWidth:240}).addTo(g);
+  });
+  g.addTo(map);
+  layers[type]=g;
+});
+
+function toggleLayer(type,btn){
+  btn.classList.toggle('active');
+  map.hasLayer(layers[type])?map.removeLayer(layers[type]):map.addLayer(layers[type]);
+}
+
+// Auto feed items
+const extras=[
+  {title:'Storm Surge Warning — Myanmar',meta:'Bay of Bengal · just now',dot:'fd-blue',badge:'fb-high',bl:'High'},
+  {title:'Dust Storm — Sahara outflow',meta:'North Africa · just now',dot:'fd-yellow',badge:'fb-moderate',bl:'Moderate'},
+  {title:'Deforestation Alert — Borneo',meta:'Indonesia · just now',dot:'fd-green',badge:'fb-low',bl:'Watch'},
+];
+let ei=0;
+setInterval(()=>{
+  if(ei>=extras.length)return;
+  const e=extras[ei++];
+  const list=document.getElementById('feedList');
+  const el=document.createElement('div');el.className='feed-item';
+  el.innerHTML=`<div class="feed-dot ${e.dot}"></div><div class="feed-body"><div class="feed-title">${e.title}</div><div class="feed-meta">${e.meta}</div></div><div class="feed-badge ${e.badge}">${e.bl}</div>`;
+  list.insertBefore(el,list.firstChild);
+},9000);
+</script>
+</body>
+</html>

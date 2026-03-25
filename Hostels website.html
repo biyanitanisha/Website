@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Hostel Map — Katraj, Pune</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --panel: #111827;
+    --card: #1a2235;
+    --border: #1f2d42;
+    --accent: #3b82f6;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --label: #94a3b8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-shrink: 0;
+    z-index: 100;
+  }
+
+  .topbar-logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .topbar-divider { width: 1px; height: 24px; background: var(--border); }
+
+  .topbar-title {
+    font-size: 13px;
+    color: var(--label);
+    white-space: nowrap;
+  }
+
+  .topbar-title strong { color: var(--text); }
+
+  .topbar-pills { display: flex; gap: 8px; margin-left: auto; }
+
+  .pill {
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .pill.active, .pill:hover { border-color: var(--accent); color: var(--accent); }
+  .pill.all { background: rgba(59,130,246,0.15); color: var(--accent); border-color: var(--accent); }
+  .pill.boys { background: rgba(139,92,246,0.1); color: var(--purple); }
+  .pill.girls { background: rgba(239,68,68,0.1); color: var(--red); }
+  .pill.mixed { background: rgba(16,185,129,0.1); color: var(--green); }
+
+  .pill.active.boys { background: rgba(139,92,246,0.25); border-color: var(--purple); }
+  .pill.active.girls { background: rgba(239,68,68,0.25); border-color: var(--red); }
+  .pill.active.mixed { background: rgba(16,185,129,0.25); border-color: var(--green); }
+
+  /* ── MAIN LAYOUT ── */
+  .app-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── SIDE PANEL ── */
+  .side-panel {
+    width: 340px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .side-panel::-webkit-scrollbar { width: 4px; }
+  .side-panel::-webkit-scrollbar-track { background: transparent; }
+  .side-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .panel-section {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* stat row */
+  .stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stat-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 14px 12px;
+  }
+
+  .stat-box .num {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .stat-box .unit { font-size: 0.75rem; color: var(--muted); }
+  .stat-box .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* chart boxes */
+  .chart-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+
+  .chart-wrap:last-child { margin-bottom: 0; }
+
+  .chart-name {
+    font-size: 11px;
+    color: var(--label);
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
+
+  /* hostel list */
+  .hostel-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .hostel-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+  }
+
+  .hostel-item:hover, .hostel-item.active {
+    border-color: var(--accent);
+    background: rgba(59,130,246,0.08);
+  }
+
+  .hostel-item.boys-type { border-left-color: var(--purple); }
+  .hostel-item.girls-type { border-left-color: var(--red); }
+  .hostel-item.mixed-type { border-left-color: var(--green); }
+
+  .hostel-item.active.boys-type { background: rgba(139,92,246,0.1); border-color: var(--purple); }
+  .hostel-item.active.girls-type { background: rgba(239,68,68,0.1); border-color: var(--red); }
+  .hostel-item.active.mixed-type { background: rgba(16,185,129,0.1); border-color: var(--green); }
+
+  .hi-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+
+  .hi-meta {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .hi-tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .tag-boys { background: rgba(139,92,246,0.2); color: var(--purple); }
+  .tag-girls { background: rgba(239,68,68,0.2); color: var(--red); }
+  .tag-mixed { background: rgba(16,185,129,0.2); color: var(--green); }
+
+  .hi-dist { font-size: 11px; color: var(--accent); font-family: 'Space Mono', monospace; }
+
+  .stars { color: var(--amber); font-size: 11px; }
+
+  /* ── MAP ── */
+  #map {
+    width: 100%;
+    height: 100%;
+    background: #0b1120;
+  }
+
+  /* Leaflet overrides */
+  .leaflet-container { background: #0b1120; }
+  .leaflet-tile { filter: brightness(0.85) saturate(0.6) hue-rotate(195deg); }
+
+  /* Custom popup */
+  .leaflet-popup-content-wrapper {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-content { margin: 0; width: 260px !important; }
+
+  .popup-inner { padding: 16px; }
+
+  .popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+
+  .popup-name { font-size: 13px; font-weight: 700; line-height: 1.3; max-width: 180px; }
+
+  .popup-body { font-size: 12px; color: var(--label); line-height: 1.6; }
+
+  .popup-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .popup-row .val { color: var(--text); font-weight: 500; font-family: 'Space Mono', monospace; font-size: 11px; }
+
+  .popup-bar-row { margin-top: 8px; }
+  .popup-bar-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .popup-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .popup-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+
+  .popup-footer {
+    background: var(--card);
+    padding: 10px 16px;
+    font-size: 10px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+
+  /* Custom marker */
+  .custom-marker {
+    width: 32px;
+    height: 32px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    border: 2px solid white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+
+  .marker-inner {
+    width: 10px;
+    height: 10px;
+    background: white;
+    border-radius: 50%;
+    transform: rotate(45deg);
+  }
+
+  /* campus marker */
+  .campus-pin {
+    background: rgba(59,130,246,0.9);
+    border: 2px solid #60a5fa;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: 'Space Mono', monospace;
+    color: white;
+    white-space: nowrap;
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.2);
+  }
+
+  /* legend */
+  .map-legend {
+    position: absolute;
+    bottom: 28px;
+    right: 12px;
+    z-index: 999;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 11px;
+  }
+
+  .legend-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--label); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* distance ring legend */
+  .ring-legend { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+  /* info box bottom */
+  .info-bar {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 8px 20px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    display: flex;
+    gap: 24px;
+    flex-shrink: 0;
+  }
+
+  .info-bar span { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .side-panel { width: 280px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+
+  <div class="topbar-divider"></div>
+  <div class="topbar-title"><strong>Student Hostel Distribution</strong> — Katraj–Dhankawadi, Pune</div>
+  <div class="topbar-pills">
+    <div class="pill all active" onclick="filterHostels('all', this)">ALL</div>
+    <div class="pill boys" onclick="filterHostels('boys', this)">BOYS</div>
+    <div class="pill girls" onclick="filterHostels('girls', this)">GIRLS</div>
+    <div class="pill mixed" onclick="filterHostels('mixed', this)">MIXED/PG</div>
+  </div>
+</div>
+
+<div class="app-body">
+
+  <!-- SIDE PANEL -->
+  <div class="side-panel">
+
+    <!-- STATS -->
+    <div class="panel-section">
+      <div class="panel-label">Area Overview</div>
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="num">9 <span class="unit">sites</span></div>
+          <div class="lbl">Hostels mapped</div>
+        </div>
+        <div class="stat-box">
+          <div class="num">4.2 <span class="unit">★</span></div>
+          <div class="lbl">Avg. rating</div>
+        </div>
+        <div class="stat-box">
+          <div class="num">1.2 <span class="unit">km</span></div>
+          <div class="lbl">Max distance</div>
+        </div>
+      
+      </div>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="panel-section">
+      <div class="panel-label">Location Insights</div>
+
+      <div class="chart-wrap">
+        <div class="chart-name">Hostel Type Distribution</div>
+        <canvas id="typeChart" height="130"></canvas>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-name">Avg. Rating by Distance Zone (km)</div>
+        <canvas id="distChart" height="120"></canvas>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-name">Facilities Available (%)</div>
+        <canvas id="facChart" height="150"></canvas>
+      </div>
+    </div>
+
+    <!-- HOSTEL LIST -->
+    <div class="panel-section">
+      <div class="panel-label">Hostel Index — click to fly to</div>
+      <div class="hostel-list" id="hostelList"></div>
+    </div>
+
+  </div>
+
+  <!-- MAP -->
+  <div style="flex:1; position:relative; display:flex; flex-direction:column; min-height:0;">
+    <div id="map"></div>
+
+    <!-- LEGEND -->
+    <div class="map-legend">
+      <div class="legend-title">Legend</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#a78bfa"></div> Boys Hostel</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#f87171"></div> Girls / Ladies PG</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#34d399"></div> Mixed / PG</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#60a5fa; border-radius:3px;"></div> Campus (BVDU)</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- INFO BAR -->
+<div class="info-bar">
+  <div>CENTER: <span>18.4584°N, 73.8556°E</span></div>
+  <div>CAMPUS: <span>Bharati Vidyapeeth Deemed to be University, Dhankawadi</span></div>
+  <div>DATA: <span>Google Places API</span></div>
+  <div>HOSTELS: <span>9 locations mapped</span></div>
+</div>
+
+<script>
+// ── DATA ──
+const campus = { lat: 18.4583989, lng: 73.8555504, name: "Bharati Vidyapeeth Deemed to be University" };
+
+const hostels = [
+  {
+    id: 1,
+    name: "Ramkrushna Boys Hostel",
+    lat: 18.4598563,
+    lng: 73.8509667,
+    type: "boys",
+    rating: 4.0,
+    reviews: 123,
+    address: "Chandrabhaga Nagar Rd, Dhankawadi",
+    facilities: ["Mess", "WiFi", "CCTV", "Laundry"],
+    phone: "+91 84212 03136",
+    note: "Steps away from PICT. Affordable with mess facility."
+  },
+  {
+    id: 2,
+    name: "Stanza Living Alexandria House",
+    lat: 18.4567179,
+    lng: 73.8532811,
+    type: "boys",
+    rating: 4.1,
+    reviews: 228,
+    address: "Chandrabhaga Nagar, Dhankawadi",
+    facilities: ["WiFi", "Meals", "Housekeeping", "App-managed"],
+    phone: "+91 80 4600 7697",
+    note: "Professionally managed PG. Higher pricing but full amenities."
+  },
+  {
+    id: 3,
+    name: "Stanza Living Girona House",
+    lat: 18.4535488,
+    lng: 73.8533284,
+    type: "girls",
+    rating: 4.2,
+    reviews: 156,
+    address: "Shriram Nagar, Katraj",
+    facilities: ["WiFi", "Meals", "Security", "Housekeeping"],
+    phone: "+91 80 4600 7697",
+    note: "Girls-only. App-based, digital check-in. Safe and organized."
+  },
+  {
+    id: 4,
+    name: "MyHostelRoom Aurora",
+    lat: 18.4601216,
+    lng: 73.849474,
+    type: "mixed",
+    rating: 4.4,
+    reviews: 80,
+    address: "Tanaji Nagar, Dhankawadi",
+    facilities: ["WiFi", "Cot & Table", "CCTV", "Hot Water"],
+    phone: "+91 80070 05599",
+    note: "Very close to PICT. Both boys & girls sections. Highly rated."
+  },
+  {
+    id: 5,
+    name: "Stanza Living Shiraz House",
+    lat: 18.4543312,
+    lng: 73.8535189,
+    type: "girls",
+    rating: 4.1,
+    reviews: 74,
+    address: "Shriram Nagar, Katraj",
+    facilities: ["WiFi", "Meals", "Housekeeping", "Security"],
+    phone: "+91 80 4600 7697",
+    note: "Girls-only PG. Good hygiene standards. Some billing complaints."
+  },
+  {
+    id: 6,
+    name: "Shantai Boys Hostel & PG",
+    lat: 18.4556868,
+    lng: 73.8477999,
+    type: "boys",
+    rating: 4.7,
+    reviews: 45,
+    address: "Shriram Nagar, Katraj",
+    facilities: ["WiFi", "Cot", "Mess nearby", "Peaceful"],
+    phone: "+91 93703 26257",
+    note: "Highest rated. 6-yr residents. Study-friendly. Very affordable."
+  },
+  {
+    id: 7,
+    name: "Balaji Boys Hostel & PG",
+    lat: 18.4450858,
+    lng: 73.8575775,
+    type: "boys",
+    rating: 4.4,
+    reviews: 74,
+    address: "Santosh Nagar, Katraj",
+    facilities: ["WiFi", "Hot Water", "CCTV", "Water Filter"],
+    phone: "+91 93703 26257",
+    note: "High floor. Fresh air. Close to Katraj bus stop."
+  },
+  {
+    id: 8,
+    name: "Bharati Vidyapeeth Girls Hostel",
+    lat: 18.4592,
+    lng: 73.8568,
+    type: "girls",
+    rating: 4.3,
+    reviews: 62,
+    address: "BVDU Campus, Dhankawadi",
+    facilities: ["Mess", "Security", "WiFi", "Campus Access"],
+    phone: "+91 20 2440 7132",
+    note: "On-campus hostel. Best for security and campus proximity."
+  },
+  {id: 9,
+name: "Vidyashray Girls Hostel",
+lat: 18.4614134,
+lng: 73.851478,
+type: "girls",
+rating: 5.0,
+reviews: 3,
+address: "Lane No. 1, Chandrabhaga Nagar, Dhankawadi, Pune 411043",
+facilities: ["24hr Access", "Security", "WiFi", "Caring Staff"],
+phone: "N/A",
+note: "Girls-only hostel. Known for nice ambiance. Near Tulja Bhavani Mata Mandir."}
+];
+
+const typeColors = { boys: '#a78bfa', girls: '#f87171', mixed: '#34d399' };
+
+// ── DISTANCE CALC ──
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+hostels.forEach(h => {
+  h.dist = haversine(campus.lat, campus.lng, h.lat, h.lng);
+});
+
+// ── MAP INIT ──
+const map = L.map('map', {
+  center: [18.4570, 73.8525],
+  zoom: 15,
+  zoomControl: true
+});
+
+// Force Leaflet to recalculate size after render
+setTimeout(() => map.invalidateSize(), 100);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 19
+}).addTo(map);
+
+// Distance rings
+L.circle([campus.lat, campus.lng], {
+  radius: 500,
+  color: 'rgba(59,130,246,0.4)',
+  fillColor: 'rgba(59,130,246,0.04)',
+  fillOpacity: 1,
+  weight: 1.5,
+  dashArray: '6 4'
+}).addTo(map);
+
+L.circle([campus.lat, campus.lng], {
+  radius: 1000,
+  color: 'rgba(59,130,246,0.2)',
+  fillColor: 'rgba(59,130,246,0.02)',
+  fillOpacity: 1,
+  weight: 1,
+  dashArray: '4 6'
+}).addTo(map);
+
+// Campus marker
+const campusIcon = L.divIcon({
+  className: '',
+  html: `<div class="campus-pin">🎓 BVDU CAMPUS</div>`,
+  iconSize: null,
+  iconAnchor: [50, 10]
+});
+L.marker([campus.lat, campus.lng], { icon: campusIcon }).addTo(map)
+  .bindTooltip("Bharati Vidyapeeth Deemed to be University, Dhankawadi", { permanent: false });
+
+// ── MARKERS + POPUPS ──
+const markerMap = {};
+
+function makePopup(h) {
+  const distM = Math.round(h.dist);
+  const distLabel = distM < 1000 ? `${distM}m` : `${(distM/1000).toFixed(2)}km`;
+  const typeLabel = h.type === 'boys' ? 'BOYS' : h.type === 'girls' ? 'GIRLS / LADIES' : 'MIXED / PG';
+  const tagClass = `tag-${h.type}`;
+  const stars = '★'.repeat(Math.round(h.rating)) + '☆'.repeat(5 - Math.round(h.rating));
+
+  return `
+    <div class="popup-inner">
+      <div class="popup-header">
+        <div class="popup-name">${h.name}</div>
+        <span class="hi-tag ${tagClass}">${typeLabel}</span>
+      </div>
+      <div class="popup-body">
+        <div class="popup-row">
+          <span>Rating</span>
+          <span class="val" style="color:#f59e0b">${stars} ${h.rating}</span>
+        </div>
+        <div class="popup-row">
+          <span>Reviews</span>
+          <span class="val">${h.reviews} reviews</span>
+        </div>
+        <div class="popup-row">
+          <span>Distance to BVDU</span>
+          <span class="val" style="color:#60a5fa">${distLabel}</span>
+        </div>
+        <div class="popup-row">
+          <span>Rent Range</span>
+          <span class="val">${h.rent}</span>
+        </div>
+        <div class="popup-row">
+          <span>Capacity</span>
+          <span class="val">${h.capacity} students</span>
+        </div>
+        <div style="margin:8px 0 4px; font-size:11px; color:#94a3b8;">Facilities: ${h.facilities.join(' · ')}</div>
+      </div>
+    </div>
+    <div class="popup-footer">📍 ${h.address}</div>
+  `;
+}
+
+function createMarker(h) {
+  const color = typeColors[h.type];
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+             <div style="width:8px;height:8px;background:white;border-radius:50%;transform:rotate(45deg)"></div>
+           </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 28]
+  });
+
+  const marker = L.marker([h.lat, h.lng], { icon })
+    .addTo(map)
+    .bindPopup(makePopup(h), { maxWidth: 280 });
+
+  marker.on('click', () => {
+    highlightListItem(h.id);
+    map.flyTo([h.lat + 0.002, h.lng], 16, { duration: 0.8 });
+  });
+
+  markerMap[h.id] = marker;
+  return marker;
+}
+
+hostels.forEach(createMarker);
+
+// ── SIDE LIST ──
+function buildList(filter = 'all') {
+  const list = document.getElementById('hostelList');
+  list.innerHTML = '';
+  const filtered = filter === 'all' ? hostels : hostels.filter(h => h.type === filter);
+  filtered.sort((a,b) => a.dist - b.dist).forEach(h => {
+    const distM = Math.round(h.dist);
+    const distLabel = distM < 1000 ? `${distM}m` : `${(distM/1000).toFixed(2)}km`;
+    const div = document.createElement('div');
+    div.className = `hostel-item ${h.type}-type`;
+    div.id = `item-${h.id}`;
+    div.innerHTML = `
+      <div class="hi-name">${h.name}</div>
+      <div class="hi-meta">
+        <span class="hi-tag tag-${h.type}">${h.type === 'boys' ? 'BOYS' : h.type === 'girls' ? 'GIRLS' : 'MIXED'}</span>
+        <span class="stars">${'★'.repeat(Math.round(h.rating))}</span>
+        <span>${h.rating}</span>
+        <span class="hi-dist">→ ${distLabel}</span>
+      </div>
+    `;
+    div.addEventListener('click', () => {
+      map.flyTo([h.lat + 0.002, h.lng], 16, { duration: 0.8 });
+      markerMap[h.id].openPopup();
+      highlightListItem(h.id);
+    });
+    list.appendChild(div);
+  });
+}
+
+function highlightListItem(id) {
+  document.querySelectorAll('.hostel-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`item-${id}`);
+  if (el) { el.classList.add('active'); el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+}
+
+buildList();
+
+// ── FILTER ──
+function filterHostels(type, el) {
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+
+  hostels.forEach(h => {
+    const m = markerMap[h.id];
+    if (type === 'all' || h.type === type) {
+      if (!map.hasLayer(m)) map.addLayer(m);
+    } else {
+      if (map.hasLayer(m)) map.removeLayer(m);
+    }
+  });
+  buildList(type);
+}
+
+// ── CHARTS ──
+// 1. Type distribution
+new Chart(document.getElementById('typeChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Boys', 'Girls / Ladies', 'Mixed / PG'],
+    datasets: [{
+      data: [
+        hostels.filter(h => h.type==='boys').length,
+        hostels.filter(h => h.type==='girls').length,
+        hostels.filter(h => h.type==='mixed').length
+      ],
+      backgroundColor: ['#a78bfa', '#f87171', '#34d399'],
+      borderWidth: 0, hoverOffset: 4
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '60%',
+    plugins: {
+      legend: {
+        position: 'right',
+        labels: { color: '#94a3b8', font: { family: 'Space Grotesk', size: 11 }, boxWidth: 10, padding: 8 }
+      }
+    }
+  }
+});
+
+// 2. Rating by distance zone
+const zones = ['< 300m', '300–600m', '600m–1km', '> 1km'];
+const zoneData = [
+  hostels.filter(h => h.dist < 300).map(h => h.rating),
+  hostels.filter(h => h.dist >= 300 && h.dist < 600).map(h => h.rating),
+  hostels.filter(h => h.dist >= 600 && h.dist < 1000).map(h => h.rating),
+  hostels.filter(h => h.dist >= 1000).map(h => h.rating),
+].map(arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2) : 0);
+
+new Chart(document.getElementById('distChart'), {
+  type: 'bar',
+  data: {
+    labels: zones,
+    datasets: [{
+      label: 'Avg Rating',
+      data: zoneData,
+      backgroundColor: ['#60a5fa', '#818cf8', '#a78bfa', '#c084fc'],
+      borderRadius: 3, borderSkipped: false
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+      y: {
+        min: 3, max: 5,
+        grid: { color: '#1f2d42' },
+        ticks: { color: '#64748b', font: { size: 10 } }
+      }
+    }
+  }
+});
+
+// 3. Facilities bar
+const facLabels = ['WiFi', 'Mess/Meals', 'CCTV/Security', 'Hot Water', 'Housekeeping', 'Laundry'];
+const facPct    = [100, 62, 75, 50, 63, 38];
+new Chart(document.getElementById('facChart'), {
+  type: 'bar',
+  data: {
+    labels: facLabels,
+    datasets: [{
+      data: facPct,
+      backgroundColor: '#10b981',
+      borderRadius: 2, borderSkipped: false
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        max: 100,
+        grid: { color: '#1f2d42' },
+        ticks: { color: '#64748b', font: { size: 10 }, callback: v => v + '%' }
+      },
+      y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+    }
+  }
+});
+</script>
+</body>
+</html>
